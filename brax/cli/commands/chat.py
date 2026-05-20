@@ -6,27 +6,20 @@ from rich.table import Table
 from rich import box
 from brax.core.config import Config
 from brax.core.memory import MemoryEngine
-from brax.agents.pm import PMAgent
-from brax.agents.architect import ArchitectAgent
-from brax.agents.frontend import FrontendAgent
-from brax.agents.backend import BackendAgent
-from brax.agents.database import DatabaseAgent
-from brax.agents.devops import DevOpsAgent
-from brax.agents.reviewer import ReviewerAgent
-from brax.agents.debugger import DebuggerAgent
+from brax.agents import AGENT_MAP as _AGENT_MAP
 from brax.core.provider import AIProvider
 
 console = Console()
 
-AGENT_MAP = {
-    "pm": ("PM", PMAgent),
-    "architect": ("Architect", ArchitectAgent),
-    "frontend": ("Frontend", FrontendAgent),
-    "backend": ("Backend", BackendAgent),
-    "database": ("Database", DatabaseAgent),
-    "devops": ("DevOps", DevOpsAgent),
-    "reviewer": ("Reviewer", ReviewerAgent),
-    "debugger": ("Debugger", DebuggerAgent),
+AGENT_LABELS = {
+    "pm": "PM",
+    "architect": "Architect",
+    "frontend": "Frontend",
+    "backend": "Backend",
+    "database": "Database",
+    "devops": "DevOps",
+    "reviewer": "Reviewer",
+    "debugger": "Debugger",
 }
 
 _instances = {}
@@ -35,7 +28,7 @@ _history = []
 
 def _get_agent(name: str):
     if name not in _instances:
-        _, cls = AGENT_MAP[name]
+        cls = _AGENT_MAP[name]
         _instances[name] = cls()
     return _instances[name]
 
@@ -96,7 +89,7 @@ def _show_memory(agent_name: str):
 
 def _show_status(agent_name: str):
     agent = _get_agent(agent_name)
-    _, label = AGENT_MAP[agent_name]
+    label = AGENT_LABELS.get(agent_name, agent_name)
     engine = MemoryEngine()
     task_count = len([m for m in engine.list_agent_memories(agent_name) if m["key"] == "task"])
     proj_count = len([m for m in engine.list_agent_memories(agent_name) if m["key"] == "project"])
@@ -168,18 +161,19 @@ def chat_cmd():
             _show_status(current_agent)
 
         elif cmd in ("/agent",):
-            if arg and arg in AGENT_MAP:
+            if arg and arg in _AGENT_MAP:
                 current_agent = arg
-                _, label = AGENT_MAP[current_agent]
+                label = AGENT_LABELS.get(current_agent, current_agent)
                 console.print(f"  [green]✓[/green] Switched to [bold]{current_agent}[/bold] ({label})")
             elif arg:
-                console.print(f"  [red]Unknown agent: {arg}. Available: {', '.join(AGENT_MAP.keys())}[/red]")
+                console.print(f"  [red]Unknown agent: {arg}. Available: {', '.join(_AGENT_MAP.keys())}[/red]")
             else:
                 console.print(f"  [yellow]Usage: /agent <name>[/yellow]")
 
         elif cmd in ("/agents", "/lsagents"):
-            for key, (lbl, _) in AGENT_MAP.items():
+            for key, cls in _AGENT_MAP.items():
                 marker = "→" if key == current_agent else " "
+                lbl = AGENT_LABELS.get(key, key)
                 console.print(f"  {marker} [cyan]{key}[/cyan] — {lbl}")
 
         elif cmd in ("/model",):
@@ -229,7 +223,7 @@ def chat_cmd():
 
         else:
             agent = _get_agent(current_agent)
-            _, label = AGENT_MAP[current_agent]
+            label = AGENT_LABELS.get(current_agent, current_agent)
             console.print(f"\n[bold cyan]{label}[/bold cyan] is responding:\n")
 
             response_text = ""

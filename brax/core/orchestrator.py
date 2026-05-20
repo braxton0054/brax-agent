@@ -37,37 +37,38 @@ class Orchestrator:
         self._repo = None
 
     def run(self, description: str):
-        config = Config()
-        workspace = config.get_workspace()
-        project_name = self._santize_name(description)
-        self.project_name = project_name
-        project_dir = workspace / project_name
-        self.writer = FileWriter(project_dir, show_diff=self.show_diff)
+        try:
+            config = Config()
+            workspace = config.get_workspace()
+            project_name = self._santize_name(description)
+            self.project_name = project_name
+            project_dir = workspace / project_name
+            self.writer = FileWriter(project_dir, show_diff=self.show_diff)
 
-        console.print(Panel(f"[bold cyan]BRAX Dev Team[/bold cyan]\n\n[white]{description}[/white]",
-                            title=" New Project Request ", border_style="cyan"))
+            console.print(Panel(f"[bold cyan]BRAX Dev Team[/bold cyan]\n\n[white]{description}[/white]",
+                                title=" New Project Request ", border_style="cyan"))
 
-        self._init_git(project_dir)
+            self._init_git(project_dir)
 
-        plan = self._phase_pm_analyze(description)
-        self._git_commit("PM analysis complete")
+            plan = self._phase_pm_analyze(description)
+            self._git_commit("PM analysis complete")
 
-        architecture = self._phase_architect_design(plan)
-        self._write_braxmd(project_dir, architecture)
-        self._git_commit("Architecture design complete")
+            architecture = self._phase_architect_design(plan)
+            self._write_braxmd(project_dir, architecture)
+            self._git_commit("Architecture design complete")
 
-        self._phase_pm_assign(architecture)
+            self._phase_pm_assign(architecture)
+            self._phase_build_parallel(architecture)
+            self._phase_review()
 
-        self._phase_build_parallel(architecture)
+            self._write_readme(project_dir)
+            self._git_commit("Project complete")
 
-        self._phase_review()
-
-        self._write_readme(project_dir)
-        self._git_commit("Project complete")
-
-        self._phase_github_push(project_dir)
-
-        self._phase_finalize(project_dir)
+            self._phase_github_push(project_dir)
+            self._phase_finalize(project_dir)
+        except Exception as e:
+            console.print(f"\n[red]✗ Build failed: {e}[/red]")
+            raise
 
     def _init_git(self, project_dir: Path):
         try:
@@ -140,34 +141,37 @@ Determined by the Architect agent during generation.
         self.writer.write_file("README.md", readme)
 
     def _phase_pm_analyze(self, description: str) -> str:
-        with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), transient=True) as p:
-            p.add_task(description="PM is analyzing your request...", total=None)
-            plan = self.pm.think(
-                f"Analyze this project request and create a detailed plan:\n{description}\n\n"
-                f"Output tasks as JSON with assigned_to for each task."
-            )
-            self.pm.send("architect", "Project plan ready", "plan")
-        return plan
+        try:
+            with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), transient=True) as p:
+                p.add_task(description="PM is analyzing your request...", total=None)
+                plan = self.pm.analyze(description)
+                self.pm.send("architect", "Project plan ready", "plan")
+            return plan
+        except Exception as e:
+            console.print(f"  [red]✗ PM analysis failed: {e}[/red]")
+            raise
 
     def _phase_architect_design(self, plan: str) -> str:
-        with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), transient=True) as p:
-            p.add_task(description="Architect is designing the system...", total=None)
-            architecture = self.architect.think(
-                f"Design the system architecture based on this plan:\n{plan}\n\n"
-                f"Include: tech stack, folder structure, API contracts, database schema, env variables."
-            )
-            self.architect.send("pm", "Architecture design complete", "design")
-        return architecture
+        try:
+            with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), transient=True) as p:
+                p.add_task(description="Architect is designing the system...", total=None)
+                architecture = self.architect.design(plan)
+                self.architect.send("pm", "Architecture design complete", "design")
+            return architecture
+        except Exception as e:
+            console.print(f"  [red]✗ Architecture design failed: {e}[/red]")
+            raise
 
     def _phase_pm_assign(self, architecture: str):
-        with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), transient=True) as p:
-            p.add_task(description="PM is assigning tasks to the team...", total=None)
-            tasks = self.pm.think(
-                f"Review this architecture and assign specific build tasks:\n{architecture}\n\n"
-                f"Assign to: frontend, backend, database, devops."
-            )
-            for agent_name in ["frontend", "backend", "database", "devops"]:
-                self.pm.send(agent_name, f"Your task based on architecture:\n{architecture}\n\nTasks:\n{tasks}", "task")
+        try:
+            with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), transient=True) as p:
+                p.add_task(description="PM is assigning tasks to the team...", total=None)
+                tasks = self.pm.assign_tasks(architecture)
+                for agent_name in ["frontend", "backend", "database", "devops"]:
+                    self.pm.send(agent_name, f"Your task based on architecture:\n{architecture}\n\nTasks:\n{tasks}", "task")
+        except Exception as e:
+            console.print(f"  [red]✗ Task assignment failed: {e}[/red]")
+            raise
 
     def _phase_build_parallel(self, architecture: str):
         builders = [
@@ -214,68 +218,78 @@ Determined by the Architect agent during generation.
         self._git_commit(f"{label.title()} build complete")
 
     def _phase_review(self):
-        files = self._get_project_files()
-        if not files:
-            return
+        try:
+            files = self._get_project_files()
+            if not files:
+                return
 
-        self.pm.send("reviewer", "All code is ready for review", "review")
+            self.pm.send("reviewer", "All code is ready for review", "review")
 
-        max_review_input = get_model_limits(self.reviewer.provider.model)["max_input"]
-        files = truncate_text(files, max_review_input // 2)
+            max_review_input = get_model_limits(self.reviewer.provider.model)["max_input"]
+            files = truncate_text(files, max_review_input // 2)
 
-        with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), transient=True) as p:
-            p.add_task(description="Reviewer is checking all code...", total=None)
-            review = self.reviewer.think(f"Review all files in the project:\n{files}")
+            with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"), transient=True) as p:
+                p.add_task(description="Reviewer is checking all code...", total=None)
+                review = self.reviewer.review(files)
 
-            if "issue" in review.lower() or "fix" in review.lower():
-                self.reviewer.send("debugger", "Issues found that need fixing", "issues")
+                if "issue" in review.lower() or "fix" in review.lower():
+                    self.reviewer.send("debugger", "Issues found that need fixing", "issues")
 
-                max_debug_input = get_model_limits(self.debugger.provider.model)["max_input"]
-                truncated_review = truncate_text(review, max_debug_input // 3)
-                p.add_task(description="Debugger is fixing issues...", total=None)
-                fixes = self.debugger.think(f"Fix these review issues:\n{truncated_review}")
-                self._parse_and_write_files(fixes, "fixes")
-                self.debugger.send("reviewer", "Fixes applied, please re-review", "fixed")
-                self._git_commit("Bug fixes applied")
+                    max_debug_input = get_model_limits(self.debugger.provider.model)["max_input"]
+                    truncated_review = truncate_text(review, max_debug_input // 3)
+                    p.add_task(description="Debugger is fixing issues...", total=None)
+                    fixes = self.debugger.fix(truncated_review)
+                    self._parse_and_write_files(fixes, "fixes")
+                    self.debugger.send("reviewer", "Fixes applied, please re-review", "fixed")
+                    self._git_commit("Bug fixes applied")
 
-        console.print("  [green]✓[/green] Review complete")
+            console.print("  [green]✓[/green] Review complete")
+        except Exception as e:
+            console.print(f"  [red]✗ Review phase failed: {e}[/red]")
+            raise
 
     def _phase_finalize(self, project_dir: Path):
-        self.pm.send("pm", "All agents have reported completion. Generating summary.", "status")
-        summary = self.pm.think(
-            f"The project is complete. Write a final summary of what was built:\nProject: {self.project_name}")
-
-        lessons_raw = self.pm.think(
-            f"Based on this project ({self.project_name}), what key lessons should each agent learn?\n"
-            f"Output a JSON object mapping agent names to a single lesson string each."
-        )
         try:
-            lessons = json.loads(lessons_raw)
-        except json.JSONDecodeError:
-            lessons = {}
+            self.pm.send("pm", "All agents have reported completion. Generating summary.", "status")
+            summary = self.pm.generate_summary(self.project_name) if hasattr(self.pm, 'generate_summary') else self.pm.think(
+                f"The project is complete. Write a final summary of what was built:\nProject: {self.project_name}")
 
-        for agent_name, lesson in lessons.items():
-            agent = getattr(self, agent_name, None)
-            if agent and lesson:
-                agent.learn(lesson)
+            lessons_raw = self.pm.generate_lessons(self.project_name) if hasattr(self.pm, 'generate_lessons') else self.pm.think(
+                f"Based on this project ({self.project_name}), what key lessons should each agent learn?\n"
+                f"Output a JSON object mapping agent names to a single lesson string each."
+            )
+            try:
+                lessons = json.loads(lessons_raw)
+            except json.JSONDecodeError:
+                lessons = {}
 
-        for agent in [self.pm, self.architect, self.frontend, self.backend,
-                      self.database, self.devops, self.reviewer, self.debugger]:
-            agent.memory.record_project(agent.name, self.project_name)
+            for agent_name, lesson in lessons.items():
+                agent = getattr(self, agent_name, None)
+                if agent and lesson:
+                    agent.learn(lesson)
 
-        console.print(Panel(summary, title=" Project Complete ", border_style="green"))
-        console.print(f"\n[bold green]✓[/bold green] Project created at: [cyan]{project_dir}[/cyan]")
+            for agent in [self.pm, self.architect, self.frontend, self.backend,
+                          self.database, self.devops, self.reviewer, self.debugger]:
+                agent.memory.record_project(agent.name, self.project_name)
+
+            console.print(Panel(summary, title=" Project Complete ", border_style="green"))
+            console.print(f"\n[bold green]✓[/bold green] Project created at: [cyan]{project_dir}[/cyan]")
+        except Exception as e:
+            console.print(f"  [red]✗ Finalization failed: {e}[/red]")
 
     def _phase_github_push(self, project_dir: Path):
-        config = Config()
-        if not config.get_github_autopush():
-            return
-        token = config.get_github_token()
-        if not token:
-            return
-        gh = GitHubManager(token)
-        console.print("  [dim]Pushing to GitHub...[/dim]")
-        gh.setup_and_push(project_dir)
+        try:
+            config = Config()
+            if not config.get_github_autopush():
+                return
+            token = config.get_github_token()
+            if not token:
+                return
+            gh = GitHubManager(token)
+            console.print("  [dim]Pushing to GitHub...[/dim]")
+            gh.setup_and_push(project_dir)
+        except Exception as e:
+            console.print(f"  [yellow]![/yellow] GitHub push skipped: {e}[/yellow]")
 
     def _parse_and_write_files(self, text: str, phase: str):
         if not self.writer:
