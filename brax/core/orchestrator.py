@@ -330,7 +330,11 @@ Determined by the Architect agent during generation.
         for f in project_dir.rglob("*"):
             if f.is_file():
                 rel = f.relative_to(project_dir)
-                files.append(f"{rel}\n{f.read_text()[:200]}")
+                try:
+                    text = f.read_text()[:200]
+                    files.append(f"{rel}\n{text}")
+                except (UnicodeDecodeError, ValueError):
+                    pass
         return "\n---\n".join(files)
 
     @staticmethod
