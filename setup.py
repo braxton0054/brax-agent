@@ -1,7 +1,7 @@
 from setuptools import setup, find_packages
 
 setup(
-    name="brax",
+    name="brax-agent",
     version="1.0.0",
     description="Open Source Multi-Agent AI Dev Team",
     packages=find_packages(include=["brax", "brax.*"]),
