@@ -28,3 +28,6 @@ Thumbs.db
 # Environment
 .env
 .env.local
+
+# Secrets (agent memory, not for GitHub)
+key.md
