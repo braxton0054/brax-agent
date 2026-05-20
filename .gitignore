@@ -31,3 +31,6 @@ Thumbs.db
 
 # Secrets (agent memory, not for GitHub)
 key.md
+
+# Agent workflow knowledge (local only)
+PLAN.md
