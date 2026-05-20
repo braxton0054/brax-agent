@@ -1,0 +1,11 @@
+typer
+rich
+anthropic
+openai
+python-dotenv
+httpx
+pydantic
+gitpython
+inquirer
+groq
+ollama
